@@ -1,7 +1,9 @@
 import json
 import pymysql
+import pymysql.cursors
 import redis
 from datetime import datetime
+import hashlib
 
 '''start time'''
 start_time = datetime.now()
@@ -10,63 +12,44 @@ start_time = datetime.now()
 connection = pymysql.connect(host='localhost',
                              user='root',
                              password='',
-                             database='testDB')
+                             database='testDB', cursorclass=pymysql.cursors.DictCursor)
 
 '''queries'''
 sql = "SELECT Major,count(*) FROM Students GROUP BY Major"
-# sql = "SELECT count(*) FROM Students"
-# sql = "SELECT `NAME`, `Major`, `id` FROM `Students` WHERE `Major`='ACE' ORDER BY `id` DESC LIMIT 10"
-# '''execution'''
-with connection:
-    with connection.cursor() as cursor:
-        '''redis object'''
-        R_SERVER = redis.Redis(host='localhost',port=6379, password='',db=0)
+'''redis object'''
+R_SERVER = redis.Redis(host='localhost',port=6379, password='',db=0)
 
-        '''get cahce data of Students as key and check if cache is not null'''
-        cached_data = R_SERVER.get('Students')
-        if cached_data is not None:
-            try:
-                print(json.loads(cached_data))
-            except:
-                print("Cache is Empty!!!")
+def cache_query(sql, TTL = 10):
+    '''creating a hash key'''
+    sql = sql.encode('utf-8')
+    hash = hashlib.sha224(sql).hexdigest()
+    # hash = hash.encode('utf-8')
+    key = "sql cache: " + hash
+    print("Key: ", key)
 
-        cursor.execute(sql)
-        result = cursor.fetchall()
-        '''setting cache value'''
-        R_SERVER.set(name= 'Students', value= json.dumps(result))
-        R_SERVER.close()
-    cursor.close()
-# print(result)
-end_time = datetime.now()
-execution_time = end_time - start_time
-print(execution_time)
-# connection.close()
+    with connection:
+        with connection.cursor() as cursor:
+            cached_data = R_SERVER.get(key)
+            '''checking if cache is null'''
+            if cached_data is not None:
+                try:
+                    return json.loads(cached_data)
+                except:
+                    '''running the query'''
+                    cursor.execute(sql)
+                    result = cursor.fetchall()
+                    '''setting cachce with expiry time'''
+                    R_SERVER.set(key, json.dumps(result))
+                    R_SERVER.expire(key, TTL)
 
-# '''Redis Obj'''
-# R_SERVER = redis.Redis(host="localhost")
+                    return json.loads(cached_data)
 
-# '''cursor'''
-# cursor = connection.cursor()
+    end_time = datetime.now()
+    execution_time = end_time - start_time
+    print(execution_time)
 
-# '''caching'''
-# cached_data = R_SERVER.get('Students')
-# if cached_data is not None:
-#     print(json.loads(cached_data))
 
-# # sql = "SELECT count(*) FROM Students"
-# sql = "SELECT Major,count(*) FROM Students GROUP BY Major"
-# # sql = "SELECT `NAME`, `Major`, `id` FROM `Students` WHERE `Major`='ACE' ORDER BY `id` DESC LIMIT 10"
-# cursor.execute(sql)
-# result = cursor.fetchall()
+if __name__ == '__main__':
+    cache_query(sql)
 
-# '''set cache'''
-# R_SERVER.set(name = 'Students', value=json.dumps(result))
-
-# cursor.close()
-# R_SERVER.close()
-# connection.close()
-# print(result)
-# end_time = datetime.now()
-# execution_time = end_time - start_time
-# print(execution_time)
 
