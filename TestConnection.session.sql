@@ -54,3 +54,6 @@ SELECT Major,count(*) FROM Students GROUP BY Major;
 
 -- @block 
 SELECT * FROM Students;
+
+-- @block
+SELECT count(*) FROM Students
